@@ -36,41 +36,28 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        /* 우측 상단 툴바(Deploy/Share 등)만 숨기고, 사이드바 토글 버튼은 유지 */
-        [data-testid="stToolbar"] {display: none !important;}
-        #MainMenu {visibility: hidden;}
+        /* 하단 "Made with Streamlit" 푸터만 숨김. 헤더/툴바는 그대로 둬야 사이드바 토글 표시됨 */
         footer {visibility: hidden;}
 
-        /* 사이드바 열기/닫기 버튼 강제 표시 (Streamlit 버전별 selector 모두 대응) */
-        [data-testid="stSidebarCollapsedControl"],
-        [data-testid="collapsedControl"],
-        [data-testid="stSidebarCollapseButton"],
-        [kind="header"] {
-            visibility: visible !important;
-            display: flex !important;
-            opacity: 1 !important;
-            z-index: 999999 !important;
-        }
-        /* 닫혀있을 때 좌측 상단에 진한 파란색 원형 버튼으로 표시 */
+        /* 사이드바 토글 버튼을 눈에 띄게 - 흰 배경 위에 파란 아이콘 */
+        button[kind="headerNoPadding"],
+        [data-testid="stSidebarCollapseButton"] button,
         [data-testid="stSidebarCollapsedControl"] button,
         [data-testid="collapsedControl"] button {
-            background-color: #0064FF !important;
-            border: none !important;
-            border-radius: 50% !important;
-            width: 40px !important;
-            height: 40px !important;
-            box-shadow: 0 2px 6px rgba(0, 100, 255, 0.35) !important;
-            color: #ffffff !important;
+            color: #0064FF !important;
         }
+        button[kind="headerNoPadding"] svg,
+        [data-testid="stSidebarCollapseButton"] button svg,
         [data-testid="stSidebarCollapsedControl"] button svg,
         [data-testid="collapsedControl"] button svg {
-            color: #ffffff !important;
-            fill: #ffffff !important;
-            stroke: #ffffff !important;
+            color: #0064FF !important;
+            fill: #0064FF !important;
         }
+        button[kind="headerNoPadding"]:hover,
+        [data-testid="stSidebarCollapseButton"] button:hover,
         [data-testid="stSidebarCollapsedControl"] button:hover,
         [data-testid="collapsedControl"] button:hover {
-            background-color: #0052d4 !important;
+            background-color: rgba(0, 100, 255, 0.08) !important;
         }
 
         .main .block-container {
