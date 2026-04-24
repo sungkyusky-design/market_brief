@@ -4,20 +4,23 @@
 
 import os
 import contextlib
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 import yaml
 
-# Streamlit Cloud: st.secrets, 로컬: .env
+# Streamlit Cloud: st.secrets로 환경변수 주입
 try:
-    if "GEMINI_API_KEY" in st.secrets:
-        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    for key in ("GEMINI_API_KEY", "GMAIL_SENDER", "GMAIL_APP_PASSWORD"):
+        if key in st.secrets:
+            os.environ[key] = st.secrets[key]
 except Exception:
     pass
 
 from news_collector import NewsCollector
 from doc_generator import DocGenerator
+from mailer import send_with_attachment
 
 TEMPLATE_PATH = "금융시장브리프 양식.docx"
 
@@ -33,7 +36,10 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        #MainMenu, footer, header {visibility: hidden;}
+        /* 우측 상단 툴바(Deploy/Share 등)만 숨기고, 사이드바 토글 버튼은 유지 */
+        [data-testid="stToolbar"] {display: none !important;}
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
 
         .main .block-container {
             padding-top: 3.5rem;
@@ -48,8 +54,6 @@ st.markdown(
             margin-bottom: 0.25rem !important;
         }
         h2, h3 { font-weight: 600; letter-spacing: -0.015em; }
-
-        .stCaption, .caption { color: #6b7280; }
 
         section[data-testid="stSidebar"] {
             background-color: #fafafa;
@@ -141,7 +145,16 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.caption("v1.0 · Research Center")
+    st.caption("v1.1 · Research Center")
+
+
+# ─────────────────────────────────────────────
+# Session state
+# ─────────────────────────────────────────────
+if "output_path" not in st.session_state:
+    st.session_state.output_path = None
+if "articles_summary" not in st.session_state:
+    st.session_state.articles_summary = None
 
 
 # ─────────────────────────────────────────────
@@ -183,6 +196,8 @@ if page == "금융시장브리프":
 
     if run:
         config["issue"]["number"] = int(issue_num)
+        st.session_state.output_path = None
+        st.session_state.articles_summary = None
 
         output_path = None
         articles = None
@@ -229,27 +244,89 @@ if page == "금융시장브리프":
                 status.update(label="오류 발생", state="error", expanded=True)
 
         if error is None and output_path:
-            success = sum(1 for a in articles if a.get("source") != "수집 실패")
-            total = len(articles)
-
-            st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-            st.success(f"문서 생성 완료 · 기사 {success} / {total}개 수록")
-
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    label="Word 파일 다운로드",
-                    data=f.read(),
-                    file_name=Path(output_path).name,
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "wordprocessingml.document"
-                    ),
-                    use_container_width=True,
-                )
-
-            if success < total:
-                st.warning(
-                    f"{total - success}개 기사 수집에 실패했습니다. 수동 확인이 필요합니다."
-                )
+            st.session_state.output_path = output_path
+            st.session_state.articles_summary = {
+                "total": len(articles),
+                "issue_num": int(issue_num),
+            }
         elif error is not None:
             st.error(f"실행 중 오류가 발생했습니다: {error}")
+
+    # ── 생성 완료 후: 다운로드 + 이메일 발송 ──
+    if st.session_state.output_path:
+        output_path = st.session_state.output_path
+        summary = st.session_state.articles_summary or {}
+
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+        st.success(f"문서 생성 완료 · 기사 {summary.get('total', '-')}개 수록")
+
+        with open(output_path, "rb") as f:
+            st.download_button(
+                label="Word 파일 다운로드",
+                data=f.read(),
+                file_name=Path(output_path).name,
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "wordprocessingml.document"
+                ),
+                use_container_width=True,
+            )
+
+        st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
+        st.markdown("#### 이메일로 전송")
+
+        gmail_ready = bool(
+            os.getenv("GMAIL_SENDER") and os.getenv("GMAIL_APP_PASSWORD")
+        )
+        if not gmail_ready:
+            st.info(
+                "Gmail 발송 설정이 없습니다. 관리자에게 `GMAIL_SENDER`, "
+                "`GMAIL_APP_PASSWORD` Secrets 등록을 요청하세요."
+            )
+
+        with st.form("email_form", clear_on_submit=False):
+            recipients_raw = st.text_input(
+                "수신자 이메일",
+                placeholder="name@shinhan.com, other@example.com",
+                help="쉼표(,)로 여러 명 입력 가능",
+            )
+            issue_num_label = summary.get("issue_num", "")
+            default_subject = (
+                f"[신한 금융시장 Brief] {issue_num_label}호 "
+                f"({datetime.now().strftime('%Y-%m-%d')})"
+            )
+            subject = st.text_input("제목", value=default_subject)
+            body = st.text_area(
+                "본문",
+                value=(
+                    "안녕하세요,\n\n"
+                    "신한 금융시장 Brief 최신호를 첨부드립니다.\n"
+                    "감사합니다."
+                ),
+                height=120,
+            )
+            submitted = st.form_submit_button(
+                "메일 보내기",
+                type="primary",
+                use_container_width=True,
+                disabled=not gmail_ready,
+            )
+
+        if submitted:
+            recipients = [
+                r.strip() for r in recipients_raw.split(",") if r.strip()
+            ]
+            if not recipients:
+                st.error("수신자 이메일을 최소 1명 이상 입력하세요.")
+            else:
+                try:
+                    with st.spinner("발송 중…"):
+                        send_with_attachment(
+                            recipients=recipients,
+                            subject=subject,
+                            body=body,
+                            attachment_path=output_path,
+                        )
+                    st.success(f"전송 완료 · {len(recipients)}명에게 발송됨")
+                except Exception as e:
+                    st.error(f"메일 발송 실패: {e}")

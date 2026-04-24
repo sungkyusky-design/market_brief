@@ -172,39 +172,88 @@ class NewsCollector:
 
         return None
 
-    def collect_article(self, topic_name: str, keywords: str, exclude_titles: list[str] = None, exclude_articles: list[dict] = None) -> dict | None:
-        """단일 주제에 대한 뉴스 1건 검색 및 요약"""
-        prompt = self._build_prompt(topic_name, keywords, exclude_titles, exclude_articles)
+    def _call_model(self, prompt: str, use_search: bool) -> str | None:
+        """Gemini 호출. 응답 텍스트를 반환하거나 예외 발생 시 None."""
+        cfg_kwargs = {"temperature": self.temperature}
+        if use_search:
+            cfg_kwargs["tools"] = [self.search_tool]
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=GenerateContentConfig(**cfg_kwargs),
+        )
+        # response.text가 비어있거나 safety filter에 걸릴 수 있음
+        if hasattr(response, "text") and response.text:
+            return response.text
+        return None
 
-        try:
-            # Google Search grounding을 사용한 생성
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    tools=[self.search_tool],
-                    temperature=self.temperature,
-                ),
-            )
+    def collect_article(
+        self,
+        topic_name: str,
+        keywords: str,
+        exclude_titles: list[str] = None,
+        exclude_articles: list[dict] = None,
+        max_attempts: int = 5,
+    ) -> dict | None:
+        """단일 주제에 대한 뉴스 1건 검색 및 요약.
 
-            result = self._parse_response(response.text)
-            if result:
-                return result
+        실패 시 전략을 바꿔가며 최대 max_attempts회 재시도.
+        - attempt 1: Google Search 사용
+        - attempt 2: Google Search + 2초 대기
+        - attempt 3: Google Search 없이 (모델이 직접 생성)
+        - attempt 4: 중복 제외 조건 완화 후 재시도
+        - attempt 5: 키워드만 최소 프롬프트
+        """
+        prompt_full = self._build_prompt(
+            topic_name, keywords, exclude_titles, exclude_articles
+        )
+        prompt_relaxed = self._build_prompt(topic_name, keywords)  # 중복 조건 제거
+        prompt_minimal = (
+            f"'{topic_name}' 관련 최근 1개월 내 주요 뉴스 1건을 아래 JSON으로만 응답.\n"
+            f"키워드: {keywords}\n"
+            f"```json\n"
+            f'{{"title": "{self.fmt["title_min_chars"]}~{self.fmt["title_max_chars"]}자 제목", '
+            f'"lines": ["불릿1 {self.fmt["body_min_chars_per_line"]}~{self.fmt["body_max_chars_per_line"]}자", '
+            f'"불릿2 ...", "불릿3 ..."], "source": "언론사"}}\n'
+            f"```"
+        )
 
-            # 파싱 실패 시 1회 재시도 (Search 없이)
-            print(f"    응답 파싱 실패, 재시도 중...")
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=self.temperature,
-                ),
-            )
-            return self._parse_response(response.text)
+        attempts = [
+            ("Google Search", prompt_full, True, 0),
+            ("Google Search + 대기", prompt_full, True, 3),
+            ("Search 없이", prompt_full, False, 2),
+            ("완화 프롬프트", prompt_relaxed, True, 4),
+            ("최소 프롬프트", prompt_minimal, True, 6),
+        ]
 
-        except Exception as e:
-            print(f"    API 오류: {e}")
-            return None
+        last_err = None
+        for i, (label, prompt, use_search, wait) in enumerate(attempts[:max_attempts], 1):
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                text = self._call_model(prompt, use_search=use_search)
+                if not text:
+                    print(f"    [{i}/{max_attempts}] 빈 응답 ({label}) — 재시도")
+                    continue
+                result = self._parse_response(text)
+                if result and result.get("title") and result.get("lines"):
+                    if i > 1:
+                        print(f"    [{i}/{max_attempts}] 재시도 성공 ({label})")
+                    return result
+                print(f"    [{i}/{max_attempts}] 파싱 실패 ({label}) — 재시도")
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                # rate limit / 과부하 → 더 길게 대기
+                if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "503" in msg:
+                    print(f"    [{i}/{max_attempts}] API 쿼터/과부하 — 15초 대기 후 재시도")
+                    time.sleep(15)
+                else:
+                    print(f"    [{i}/{max_attempts}] API 오류 ({label}): {msg[:120]}")
+
+        if last_err:
+            print(f"    ※ 최종 오류: {last_err}")
+        return None
 
     def collect_all(self) -> list[dict]:
         """config에 정의된 모든 주제에 대해 뉴스 수집"""
@@ -235,30 +284,37 @@ class NewsCollector:
                     exclude_articles=collected_articles if i > 0 else None
                 )
 
+                # 기본 수집 실패 시 추가 보강 재시도 (최대 2회, 긴 대기 포함)
+                if not article:
+                    print(f"    ↻ 1차 실패 — 30초 대기 후 보강 재시도")
+                    time.sleep(30)
+                    article = self.collect_article(
+                        name, keywords,
+                        exclude_articles=collected_articles if i > 0 else None,
+                        max_attempts=3,
+                    )
+                if not article:
+                    print(f"    ↻ 2차 실패 — 60초 대기 후 최후 재시도")
+                    time.sleep(60)
+                    article = self.collect_article(
+                        name, keywords,
+                        exclude_articles=None,  # 중복 조건 제거
+                        max_attempts=3,
+                    )
+
                 if article:
                     article["topic"] = name
-                    article["author"] = author  # 저자 정보 추가
+                    article["author"] = author
                     articles.append(article)
-                    
-                    # 중복 방지를 위해 전체 기사 정보 저장
                     collected_articles.append(article)
-                    
                     title_preview = article.get("title", "")[:20]
                     print(f"-> \"{title_preview}\"")
                 else:
-                    # 실패 시 빈 항목 추가 (수동 수정 가능)
-                    articles.append({
-                        "topic": name,
-                        "title": f"{name} 관련 뉴스 (수동 입력 필요)",
-                        "lines": [
-                            "해당 주제 뉴스 수집에 실패함",
-                            "수동으로 내용을 입력해주세요",
-                            "",
-                        ],
-                        "source": "수집 실패",
-                        "author": author,  # 저자 정보 추가
-                    })
-                    print("-> 실패 (빈 항목 추가됨)")
+                    # 극단적으로 모든 재시도 실패 — 상위에서 처리할 수 있도록 예외
+                    raise RuntimeError(
+                        f"'{name}' 주제 뉴스 수집이 모든 재시도 끝에 실패했습니다. "
+                        f"잠시 후 다시 시도하거나 Gemini API 상태를 확인하세요."
+                    )
 
                 # Rate limit 방지 대기
                 if idx < total:
