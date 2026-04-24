@@ -51,20 +51,26 @@ st.markdown(
             opacity: 1 !important;
             z-index: 999999 !important;
         }
-        /* 닫혀있을 때 좌측 상단에 동그란 버튼으로 표시 */
+        /* 닫혀있을 때 좌측 상단에 진한 파란색 원형 버튼으로 표시 */
         [data-testid="stSidebarCollapsedControl"] button,
         [data-testid="collapsedControl"] button {
-            background-color: #ffffff !important;
-            border: 1px solid #d1d5db !important;
+            background-color: #0064FF !important;
+            border: none !important;
             border-radius: 50% !important;
-            width: 36px !important;
-            height: 36px !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
-            color: #111827 !important;
+            width: 40px !important;
+            height: 40px !important;
+            box-shadow: 0 2px 6px rgba(0, 100, 255, 0.35) !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] button svg,
+        [data-testid="collapsedControl"] button svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+            stroke: #ffffff !important;
         }
         [data-testid="stSidebarCollapsedControl"] button:hover,
         [data-testid="collapsedControl"] button:hover {
-            background-color: #f3f4f6 !important;
+            background-color: #0052d4 !important;
         }
 
         .main .block-container {
