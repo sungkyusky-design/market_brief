@@ -41,6 +41,32 @@ st.markdown(
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
 
+        /* 사이드바 열기/닫기 버튼 강제 표시 (Streamlit 버전별 selector 모두 대응) */
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapseButton"],
+        [kind="header"] {
+            visibility: visible !important;
+            display: flex !important;
+            opacity: 1 !important;
+            z-index: 999999 !important;
+        }
+        /* 닫혀있을 때 좌측 상단에 동그란 버튼으로 표시 */
+        [data-testid="stSidebarCollapsedControl"] button,
+        [data-testid="collapsedControl"] button {
+            background-color: #ffffff !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 50% !important;
+            width: 36px !important;
+            height: 36px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+            color: #111827 !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] button:hover,
+        [data-testid="collapsedControl"] button:hover {
+            background-color: #f3f4f6 !important;
+        }
+
         .main .block-container {
             padding-top: 3.5rem;
             padding-bottom: 4rem;
