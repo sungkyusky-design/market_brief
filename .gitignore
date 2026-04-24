@@ -1,0 +1,7 @@
+.env
+.DS_Store
+__pycache__/
+*.pyc
+260*_Shinhan*.docx
+260*_Shinhan*.pdf
+.streamlit/secrets.toml
