@@ -24,7 +24,7 @@ format:
 model:
   name: "gemini-2.5-flash"       # Gemini 모델명
   temperature: 0.3               # 낮을수록 안정적, 높을수록 창의적
-  delay_between_calls: 2         # API 호출 간 대기 시간 (초)
+  delay_between_calls: 5         # API 호출 간 대기 시간 (초)
 
 # 주제 목록 (총 15개 기사)
 # count: 해당 주제에서 가져올 기사 수

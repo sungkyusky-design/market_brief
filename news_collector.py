@@ -220,10 +220,10 @@ class NewsCollector:
 
         attempts = [
             ("Google Search", prompt_full, True, 0),
-            ("Google Search + 대기", prompt_full, True, 3),
-            ("Search 없이", prompt_full, False, 2),
-            ("완화 프롬프트", prompt_relaxed, True, 4),
-            ("최소 프롬프트", prompt_minimal, True, 6),
+            ("Search 없이", prompt_full, False, 5),
+            ("Search 없이 + 대기", prompt_full, False, 10),
+            ("완화 프롬프트 + Search", prompt_relaxed, True, 15),
+            ("최소 프롬프트 (no search)", prompt_minimal, False, 5),
         ]
 
         last_err = None
@@ -246,8 +246,8 @@ class NewsCollector:
                 msg = str(e)
                 # rate limit / 과부하 → 더 길게 대기
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "503" in msg:
-                    print(f"    [{i}/{max_attempts}] API 쿼터/과부하 — 15초 대기 후 재시도")
-                    time.sleep(15)
+                    print(f"    [{i}/{max_attempts}] API 쿼터/과부하 — 30초 대기 후 재시도")
+                    time.sleep(30)
                 else:
                     print(f"    [{i}/{max_attempts}] API 오류 ({label}): {msg[:120]}")
 
