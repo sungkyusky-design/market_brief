@@ -22,7 +22,7 @@ format:
 
 # AI 모델 설정
 model:
-  name: "gemini-2.0-flash"       # Gemini 모델명
+  name: "gemini-2.5-flash"       # Gemini 모델명
   temperature: 0.3               # 낮을수록 안정적, 높을수록 창의적
   delay_between_calls: 2         # API 호출 간 대기 시간 (초)
 
